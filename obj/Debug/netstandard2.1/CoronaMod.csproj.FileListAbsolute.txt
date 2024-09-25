@@ -1,0 +1,12 @@
+D:\Users\Dan\thunderstore projects\CoronaMod\bin\Debug\netstandard2.1\CoronaTerrio.CoronaMod.deps.json
+d:\Users\Dan\thunderstore projects\CoronaMod\bin\Debug\netstandard2.1\CoronaTerrio.CoronaMod.dll
+d:\Users\Dan\thunderstore projects\CoronaMod\obj\Debug\netstandard2.1\CoronaMod.csproj.AssemblyReference.cache
+d:\Users\Dan\thunderstore projects\CoronaMod\obj\Debug\netstandard2.1\MyPluginInfo.cs
+d:\Users\Dan\thunderstore projects\CoronaMod\obj\Debug\netstandard2.1\CoronaMod.GeneratedMSBuildEditorConfig.editorconfig
+d:\Users\Dan\thunderstore projects\CoronaMod\obj\Debug\netstandard2.1\CoronaMod.AssemblyInfoInputs.cache
+d:\Users\Dan\thunderstore projects\CoronaMod\obj\Debug\netstandard2.1\CoronaMod.AssemblyInfo.cs
+d:\Users\Dan\thunderstore projects\CoronaMod\obj\Debug\netstandard2.1\CoronaMod.csproj.CoreCompileInputs.cache
+d:\Users\Dan\thunderstore projects\CoronaMod\obj\Debug\netstandard2.1\CoronaMod.sourcelink.json
+d:\Users\Dan\thunderstore projects\CoronaMod\obj\Debug\netstandard2.1\CoronaTerrio.CoronaMod.dll
+d:\Users\Dan\thunderstore projects\CoronaMod\bin\Debug\netstandard2.1\MMHOOK_Assembly-CSharp.dll
+D:\Users\Dan\thunderstore projects\CoronaMod\obj\Debug\netstandard2.1\CoronaMod.csproj.Up2Date
