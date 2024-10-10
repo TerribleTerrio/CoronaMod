@@ -1,15 +1,11 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using GameNetcodeStuff;
 using Unity.Netcode;
 using UnityEngine;
-using HarmonyLib;
 
-namespace CoronaMod;
-
-[HarmonyPatch(typeof(ArtilleryShellItem))]
-
-public class ArtilleryShellItem : PhysicsProp, IHittable, IShockableWithGun
+public class ArtilleryShellItem : AnimatedItem, IHittable, IShockableWithGun, ITouchable
 {
     [Header("Artillery Shell Settings")]
     public float explodeHeight;
@@ -22,13 +18,19 @@ public class ArtilleryShellItem : PhysicsProp, IHittable, IShockableWithGun
 
     public float pushRange;
 
+	[SerializeField] public LayerMask layerMask;
+
+	private int layers;
+
+	private int mask;
+
     public int nonLethalDamage;
 
     public float physicsForce;
 
 	public float delayedDetonationTime;
 
-	private bool hasExploded;
+	public bool hasExploded;
 
 	private Vector3 startPosition;
 
@@ -54,28 +56,37 @@ public class ArtilleryShellItem : PhysicsProp, IHittable, IShockableWithGun
 
 	public bool explodeOnGunshot;
 
-	public bool explodeOnLightning;
-
 	public bool explodeOnShockWithGun;
 
+	public bool explodeInOrbit;
+
     [Space(5f)]
-    public AudioSource shellHitSource;
+	public AudioSource shellExplodeSource;
 
-	public AudioSource shellDetonateSource;
+	public AudioSource shellExplodeSourceMedium;
 
-    public AudioClip shellHit;
+	public AudioSource shellExplodeSourceFar;
 
-	public AudioClip shellDud;
+    public AudioClip[] shellHit;
 
-    public AudioClip shellDetonate;
+	public AudioClip[] shellDud;
 
-    public AudioClip shellDetonateFar;
+    public AudioClip[] shellExplode;
 
-	public AudioClip shellArmed;
+	public AudioClip[] shellExplodeMedium;
+
+    public AudioClip[] shellExplodeFar;
+
+	public AudioClip[] shellArmed;
 
 	public override void Start()
 	{
 		base.Start();
+		Debug.Log($"Shell explosion layer mask: {layerMask}");
+		layers = (1 << layerMask);
+		Debug.Log($"Shell explosion layer mask hash: {layers}");
+		int mask = 1 << 3 | 1 << 6 | 1 << 19 | 1 << 21 | 1 << 30;
+		Debug.Log($"mask: {mask}");
 
 		float f1 = 55f*0.4f;
 		float t1 = 340f*0.4f;
@@ -162,7 +173,7 @@ public class ArtilleryShellItem : PhysicsProp, IHittable, IShockableWithGun
 		}
 
 		fallHeight = Vector3.Distance(fallPosition,startPosition);
-		Debug.Log($"Fall height: {fallHeight}");
+		Debug.Log($"Shell fell: {fallHeight}");
 
 		float c = UnityEngine.Random.Range(0,100);
 
@@ -174,186 +185,168 @@ public class ArtilleryShellItem : PhysicsProp, IHittable, IShockableWithGun
 			}
 			else
 			{
-				shellDetonateSource.pitch = UnityEngine.Random.Range(0.75f, 1.07f);
-				shellDetonateSource.PlayOneShot(shellDud, 1f);
+				RoundManager.Instance.PlayAudibleNoise(base.transform.position, noiseRange*5, noiseLoudness*2, timesPlayedInOneSpot, isInShipRoom && StartOfRound.Instance.hangarDoorsClosed);
+
+        		RoundManager.PlayRandomClip(shellExplodeSource, shellDud, randomize: false, 1f, -1);
+				RoundManager.PlayRandomClip(shellExplodeSourceMedium, shellDud, randomize: false, 1f, -1);
+				RoundManager.PlayRandomClip(shellExplodeSourceFar, shellDud, randomize: false, 1f, -1);
 			}
 		}
 	}
-
     public void Detonate()
     {
-        Debug.Log("Artillery shell detonated!");
-        shellDetonateSource.PlayOneShot(shellDetonate, 1f);
-        Explode(base.transform.position + Vector3.up, killRange, damageRange, pushRange, nonLethalDamage, physicsForce);
+		if (!explodeInOrbit)
+		{
+			if (StartOfRound.Instance.inShipPhase || StartOfRound.Instance.timeSinceRoundStarted < 2f)
+			{
+				return;
+			}
+		}
+		if (hasExploded)
+		{
+			return;
+		}
+		Debug.Log("Artillery shell detonated!");
+		Explode();
     }
 
-	private IEnumerator DelayDetonate(float delay)
+	public void ArmShell()
+	{
+		Debug.Log("Shell armed.");
+		RoundManager.Instance.PlayAudibleNoise(base.transform.position, noiseRange, noiseLoudness, timesPlayedInOneSpot, isInShipRoom && StartOfRound.Instance.hangarDoorsClosed);
+        RoundManager.PlayRandomClip(itemAudio, shellArmed, randomize: false, 1f, -1);
+		StartCoroutine(DelayDetonate(delayedDetonationTime));
+	}
+
+	public IEnumerator DelayDetonate(float delay)
 	{
 		yield return new WaitForSeconds(delay);
 		Detonate();
 	}
 
-    public void Explode(Vector3 explosionPosition, float killRange, float damageRange, float pushRange, int nonLethalDamage, float physicsForce, GameObject overridePrefab = null, bool goThroughCar = false)
-    {
-
-		GameObject gameObject = UnityEngine.Object.Instantiate(explosionPrefab, explosionPosition, Quaternion.identity, RoundManager.Instance.mapPropsContainer.transform);
-		gameObject.SetActive(value: true);
-
-        //DETERMINE DISTANCE FROM EXPLOSION
-        float num = Vector3.Distance(GameNetworkManager.Instance.localPlayerController.transform.position, explosionPosition);
-
-        //SHAKE SCREEN DEPENDING ON DISTANCE FROM EXPLOSION
-        if (num < 14f)
+	public IEnumerator DelayDetonateOtherShell(float delay, ArtilleryShellItem shell)
+	{
+		if (!shell.hasExploded)
 		{
-			HUDManager.Instance.ShakeCamera(ScreenShakeType.VeryStrong);
+			yield return new WaitForSeconds(delay);
+			shell.Detonate();
+			UnityEngine.Object.Destroy(base.gameObject);
 		}
-		else if (num < 25f)
-		{
-			HUDManager.Instance.ShakeCamera(ScreenShakeType.Big);
-		}
+	}
 
-        //INSTANCE VARIABLES
-        bool flag = false;
-		Collider[] array = Physics.OverlapSphere(explosionPosition, pushRange, 2621448, QueryTriggerInteraction.Collide);
-		PlayerControllerB playerControllerB = null;
-		RaycastHit hitInfo;
-
-        //RUN FOR EVERYTHING IN THE RADIUS OF THE EXPLOSION
-        for (int i = 0; i < array.Length; i++)
-		{
-
-            //CHECK DISTANCE OF CURRENT ARRAY ITEM FROM EXPLOSION
-			float num2 = Vector3.Distance(explosionPosition, array[i].transform.position);
-
-			if (Physics.Linecast(explosionPosition, array[i].transform.position + Vector3.up * 0.3f, out hitInfo, 1073742080, QueryTriggerInteraction.Ignore) && ((!goThroughCar && hitInfo.collider.gameObject.layer == 30) || num2 > 4f))
-			{
-				continue;
-			}
-
-            //FOR PLAYERS
-			if (array[i].gameObject.layer == 3 && !flag)
-			{
-				playerControllerB = array[i].gameObject.GetComponent<PlayerControllerB>();
-				if (playerControllerB != null && playerControllerB.IsOwner)
-				{
-					flag = true;
-					if (num2 < killRange)
-					{
-						Vector3 bodyVelocity = Vector3.Normalize(playerControllerB.gameplayCamera.transform.position - explosionPosition) * 80f / Vector3.Distance(playerControllerB.gameplayCamera.transform.position, explosionPosition);
-						playerControllerB.KillPlayer(bodyVelocity, spawnBody: true, CauseOfDeath.Blast);
-					}
-					else if (num2 < damageRange)
-					{
-						Vector3 bodyVelocity = Vector3.Normalize(playerControllerB.gameplayCamera.transform.position - explosionPosition) * 80f / Vector3.Distance(playerControllerB.gameplayCamera.transform.position, explosionPosition);
-						playerControllerB.DamagePlayer(nonLethalDamage, hasDamageSFX: true, callRPC: true, CauseOfDeath.Blast, 0, fallDamage: false, bodyVelocity);
-					}
-				}
-			}
-
-            //FOR ITEMS
-            else if (array[i].gameObject.layer == 6)
-            {
-                ArtilleryShellItem componentInChildren = array[i].gameObject.GetComponentInChildren<ArtilleryShellItem>();
-                if (componentInChildren != null && num2 < killRange)
-                {
-					Debug.Log("Additional shell within kill range.");
-                    componentInChildren.Detonate();
-                }
-            }
-
-            //FOR LANDMINES
-			else if (array[i].gameObject.layer == 21)
-			{
-				Landmine componentInChildren = array[i].gameObject.GetComponentInChildren<Landmine>();
-				if (componentInChildren != null && !componentInChildren.hasExploded && num2 < 6f)
-				{
-					componentInChildren.Detonate();
-				}
-			}
-
-            //FOR ENEMIES
-			else if (array[i].gameObject.layer == 19)
-			{
-				EnemyAICollisionDetect componentInChildren2 = array[i].gameObject.GetComponentInChildren<EnemyAICollisionDetect>();
-				if (componentInChildren2 != null && componentInChildren2.mainScript.IsOwner && num2 < 4.5f)
-				{
-					componentInChildren2.mainScript.HitEnemyOnLocalClient(6);
-					componentInChildren2.mainScript.HitFromExplosion(num2);
-				}
-			}
-		}
-
-        playerControllerB = GameNetworkManager.Instance.localPlayerController;
-
-        //PHYSICS FORCE
-        if (physicsForce > 0f && Vector3.Distance(playerControllerB.transform.position, explosionPosition) < pushRange && !Physics.Linecast(explosionPosition, playerControllerB.transform.position + Vector3.up * 0.3f, out hitInfo, 256, QueryTriggerInteraction.Ignore))
-		{
-			float num3 = Vector3.Distance(playerControllerB.transform.position, explosionPosition);
-			Vector3 vector = Vector3.Normalize(playerControllerB.transform.position + Vector3.up * num3 - explosionPosition) / (num3 * 0.35f) * physicsForce;
-			if (vector.magnitude > 2f)
-			{
-				if (vector.magnitude > 10f)
-				{
-					playerControllerB.CancelSpecialTriggerAnimations();
-				}
-				if (!playerControllerB.inVehicleAnimation || (playerControllerB.externalForceAutoFade + vector).magnitude > 50f)
-				{
-					playerControllerB.externalForceAutoFade += vector;
-				}
-			}
-		}
-
-        VehicleController vehicleController = UnityEngine.Object.FindObjectOfType<VehicleController>();
-		if (vehicleController != null && !vehicleController.magnetedToShip && physicsForce > 0f && Vector3.Distance(vehicleController.transform.position, explosionPosition) < pushRange)
-		{
-			vehicleController.mainRigidbody.AddExplosionForce(physicsForce * 50f, explosionPosition, 12f, 3f, ForceMode.Impulse);
-		}
-		int num4 = ~LayerMask.GetMask("Room");
-		num4 = ~LayerMask.GetMask("Colliders");
-		array = Physics.OverlapSphere(explosionPosition, 10f, num4);
-		for (int j = 0; j < array.Length; j++)
-		{
-			Rigidbody component = array[j].GetComponent<Rigidbody>();
-			if (component != null)
-			{
-				component.AddExplosionForce(70f, explosionPosition, 10f);
-			}
-		}
-
+	public void Explode()
+	{
 		hasExploded = true;
+		Landmine.SpawnExplosion(this.gameObject.transform.position + Vector3.up, true, killRange, damageRange, nonLethalDamage, physicsForce, explosionPrefab, true);
 
-		GameObject thisObject = this.gameObject;
-		UnityEngine.Object.Destroy(thisObject);
+		EnableItemMeshes(enable: false);
+        grabbable = false;
+        grabbableToEnemies = false;
+        deactivated = true;
+		if (heldByPlayerOnServer)
+		{
+			playerHeldBy.DropItemAheadOfPlayer();
+		}
+		StartCoroutine(DelayDestroySelf(delayedDetonationTime));
+	}
 
-    }
+	public IEnumerator DelayDestroySelf(float delay)
+	{
+		yield return new WaitForSeconds(delay);
+		base.gameObject.SetActive(false);
+		base.targetFloorPosition.x = 3000f;
+		// UnityEngine.Object.Destroy(base.gameObject);
+	}
 
     //HITTABLE PARAMS
     bool IHittable.Hit(int force, Vector3 hitDirection, PlayerControllerB playerWhoHit = null, bool playHitSFX = true, int hitID = -1)
 	{
 
         Debug.Log("Shell hit.");
-        shellHitSource.pitch = UnityEngine.Random.Range(0.75f, 1.07f);
-        shellHitSource.PlayOneShot(shellHit, 1f);
+
+		RoundManager.Instance.PlayAudibleNoise(base.transform.position, noiseRange, noiseLoudness, timesPlayedInOneSpot, isInShipRoom && StartOfRound.Instance.hangarDoorsClosed);
+        RoundManager.PlayRandomClip(itemAudio, shellHit, randomize: true, 1f, -1);
 
         if (explodeOnHit == true)
         {
-			shellDetonateSource.pitch = UnityEngine.Random.Range(0.75f, 1.07f);
             float c = UnityEngine.Random.Range(0,100);
             if (c < explodeOnHitChance)
 			{
-				Debug.Log("Shell armed.");
-				shellDetonateSource.PlayOneShot(shellArmed, 1f);
-
-				StartCoroutine(DelayDetonate(delayedDetonationTime));
+				ArmShell();
 			}
 			else
 			{
 				Debug.Log("Shell not armed.");
-				//shellDetonateSource.PlayOneShot(shellDud, 1f);
 			}
         }
 
         return true;
+	}
+
+	//TOUCHABLE PARAMS
+	public void OnTouch(Collider other)
+	{
+		GameObject otherObject = other.gameObject;
+
+		//PLAYER COLLISION
+		if (otherObject.layer == 3)
+		{
+			PlayerControllerB player = otherObject.GetComponent<PlayerControllerB>();
+			return;
+		}
+
+		//ENEMY COLLISION
+		if (otherObject.layer == 19 && otherObject.GetComponent<EnemyAICollisionDetect>() != null)
+		{
+			EnemyAICollisionDetect enemy = otherObject.GetComponent<EnemyAICollisionDetect>();
+			if (enemy.mainScript.enemyType.enemyName == "RadMech")
+			{
+				Detonate();
+				enemy.mainScript.SetEnemyStunned(true, 2f);
+			}
+			if (enemy.mainScript.enemyType.enemyName == "Earth Leviathan")
+			{
+				Detonate();
+			}
+			return;
+		}
+
+		//TRIGGERS COLLISION
+		else if (otherObject.layer == 13)
+        {
+			if (otherObject.GetComponentInParent<SpikeRoofTrap>() != null)
+			{
+				Detonate();
+			}
+			return;
+        }
+
+		//VEHICLE COLLISION
+		// else if (otherObject.transform.parent.gameObject.layer == 30) //REWRITE THIS!!
+		// {
+		// 	VehicleController vehicle = otherObject.GetComponentInParent<VehicleController>();
+		// 	if (vehicle.averageVelocity.magnitude > 17)
+		// 	{
+		// 		Detonate();
+		// 	}
+		// 	return;
+		// }
+
+		//PROPS COLLISION
+		else if (otherObject.layer == 6)
+		{
+			Debug.Log("Detected collider on prop layer.");
+			if (otherObject.name.StartsWith("explosionColliderDamage"))
+			{
+				Debug.Log("Detected explosion collider.");
+				Detonate();
+			}
+		}
+	}
+
+	public void OnExit(Collider other)
+	{
+
 	}
 
 	//SHOCKABLE PARAMS

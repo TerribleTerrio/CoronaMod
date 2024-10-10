@@ -5,7 +5,7 @@
 
 - 1.1.0
 
-  - Navmesh & collider updates
+  - Navmesh & collider updates (91 Fart)
 
 
 - 1.0.0

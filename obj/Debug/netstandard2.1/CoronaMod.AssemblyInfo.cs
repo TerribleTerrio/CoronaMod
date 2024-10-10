@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("adds farting to Lethal Company")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.2.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.2.0+2ba8a1b2789d6d9de411b80a516c4ec9113c4219")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.2.0+a2265e084e407329d830ffc5f4818f58df7d3d0b")]
 [assembly: System.Reflection.AssemblyProductAttribute("CoronaMod")]
 [assembly: System.Reflection.AssemblyTitleAttribute("CoronaTerrio.CoronaMod")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.2.0.0")]

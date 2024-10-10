@@ -1,47 +1,32 @@
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
-//using LobbyCompatibility.Attributes;
-//using LobbyCompatibility.Enums;
-
 namespace CoronaMod;
+using Patches;
 
-[BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
-//[BepInDependency("BMX.LobbyCompatibility", BepInDependency.DependencyFlags.HardDependency)]
-//[LobbyCompatibility(CompatibilityLevel.ClientOnly, VersionStrictness.None)]
+[BepInPlugin(modGUID, modName, modVersion)]
 public class CoronaMod : BaseUnityPlugin
 {
+    private const string modGUID = "CoronaTerrio.CoronaMod";
+    private const string modName = "CoronaMod";
+    private const string modVersion = "1.2.0";
+
     public static CoronaMod Instance { get; private set; } = null!;
-    internal new static ManualLogSource Logger { get; private set; } = null!;
-    internal static Harmony? Harmony { get; set; }
+    private readonly Harmony harmony = new Harmony(modGUID);
+    internal ManualLogSource nls;
 
     private void Awake()
     {
-        Logger = base.Logger;
-        Instance = this;
+        if (Instance == null)
+        {
+            Instance = this;
+        }
 
-        Patch();
+        nls = BepInEx.Logging.Logger.CreateLogSource(modGUID);
 
-        Logger.LogInfo($"{MyPluginInfo.PLUGIN_GUID} v{MyPluginInfo.PLUGIN_VERSION} has loaded!");
-    }
+        harmony.PatchAll(typeof(LandminePatch));
+        //harmony.PatchAll(typeof(StartOfRoundPatch));
 
-    internal static void Patch()
-    {
-        Harmony ??= new Harmony(MyPluginInfo.PLUGIN_GUID);
-
-        Logger.LogDebug("Patching...");
-
-        Harmony.PatchAll();
-
-        Logger.LogDebug("Finished patching!");
-    }
-
-    internal static void Unpatch()
-    {
-        Logger.LogDebug("Unpatching...");
-
-        Harmony?.UnpatchSelf();
-
-        Logger.LogDebug("Finished unpatching!");
+        nls.LogInfo("CoronaMod is loaded!");
     }
 }

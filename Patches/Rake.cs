@@ -5,8 +5,9 @@ using System.Linq;
 using GameNetcodeStuff;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.Analytics;
 
-public class Rake : PhysicsProp
+public class Rake : GrabbableObject, ITouchable
 {
 
     [Header("Rake Settings")]
@@ -14,26 +15,42 @@ public class Rake : PhysicsProp
 
     public int damageDealtEnemy;
 
+    public float damageRange;
+
     public float physicsForce;
+
+    public float upForce;
+
+    public float coolDownTime;
+
+    private bool onCoolDown;
+
+    public GameObject animContainer;
+
+    private PlayerControllerB lastHeld;
+
+    public GameObject itemCollider;
 
     private Animator animator;
 
-    private bool rakeFlipped;
+    private List<GameObject> objectsTouching;
 
-    private GameObject activator;
+    private Vector3 lastPositionAtFlip;
 
     [Space(5f)]
     public AudioSource rakeAudio;
 
-    public AudioClip rakeFlip;
+    public AudioClip[] rakeFlip;
 
-    public AudioClip rakeFall;
+    public AudioClip[] rakeFall;
 
     public AudioClip reelUp;
 
     public AudioClip rakeSwing;
 
     public AudioClip[] hitSFX;
+
+    private int timesPlayingInOneSpot = 0;
 
     [Space(5f)]
     [Header("Weapon Variables")]
@@ -55,75 +72,291 @@ public class Rake : PhysicsProp
 
     private int rakeMask = 1084754248;
 
-    private void Start()
+    public override void Start()
     {
-        animator = base.gameObject.GetComponent<Animator>();
+        animator = animContainer.gameObject.GetComponent<Animator>();
+
+        objectsTouching = new List<GameObject>();
+
+        base.Start();
     }
 
-    private void OnTriggerEnter(Collider other)
+    public void OnTouch(Collider other)
     {
-        if (isHeld || rakeFlipped)
+        GameObject otherObject = other.gameObject;
+
+        if (isHeld || !hasHitGround)
         {
             return;
         }
 
         //PLAYER COLLISION
-        else if (other.gameObject.layer == 3)
+        if (otherObject.layer == 3 && objectsTouching.Count() < 1 && lastHeld != otherObject.GetComponent<PlayerControllerB>())
         {
-            Debug.Log("Rake activated by player.");
-            activator = other.gameObject;
-            PlayerControllerB player = other.gameObject.GetComponent<PlayerControllerB>();
-            Vector3 bodyVelocity = Vector3.Normalize(player.gameplayCamera.transform.position - base.transform.position) * 80f / Vector3.Distance(player.gameplayCamera.transform.position, base.transform.position);
-            Flip();
-            player.DamagePlayer(damageDealtPlayer, hasDamageSFX: true, callRPC: true, CauseOfDeath.Bludgeoning, 0, fallDamage:false, bodyVelocity);
-
-            //PLAYER PHYSICS
-            if (physicsForce > 0f)
+            if (objectsTouching.Count() < 1 && !onCoolDown && animator.GetCurrentAnimatorStateInfo(0).IsName("sit"))
             {
-                Vector3 vector = Vector3.Normalize(player.transform.position - base.transform.position);
-                if (vector.magnitude > 10f)
-                {
-                    player.CancelSpecialTriggerAnimations();
-                }
-                if (!player.inVehicleAnimation || (player.externalForceAutoFade + vector).magnitude > 50f)
-                {
-                    player.externalForceAutoFade += vector;
-                }
+                Flip();
             }
+            objectsTouching.Add(otherObject);
         }
 
         //ENEMY COLLISION
         else if (other.gameObject.layer == 19)
         {
-            Debug.Log("Rake activated by enemy.");
-            activator = other.gameObject;
-            EnemyAICollisionDetect enemy = other.gameObject.GetComponent<EnemyAICollisionDetect>();
-            enemy.mainScript.HitEnemyOnLocalClient(damageDealtEnemy);
-            Flip();
+            EnemyAICollisionDetect enemy = otherObject.GetComponent<EnemyAICollisionDetect>();
+            if (objectsTouching.Count() <1 && !onCoolDown && animator.GetCurrentAnimatorStateInfo(0).IsName("sit"))
+            {
+                if (enemy.mainScript.enemyType.enemyName == "Earth Leviathan")
+                {
+                }
+                else if (enemy.mainScript.enemyType.enemyName == "Red Locust Bees")
+                {
+                }
+                else if (enemy.mainScript.enemyType.enemyName == "Butler Bees")
+                {
+                }
+                else if (enemy.mainScript.enemyType.enemyName == "Docile Locust Bees")
+                {
+                }
+                else if (enemy.mainScript.enemyType.enemyName == "Flowerman")
+                {
+                    FlowermanAI flowerman = enemy.mainScript as FlowermanAI;
+                    if (flowerman.isInAngerMode)
+                    {
+                        Flip();
+                    }
+                    else
+                    {
+                    }
+                }
+                else
+                {
+                    Flip();
+                }
+            }
+            objectsTouching.Add(otherObject);
         }
+
+        else
+        {
+        }
+
     }
 
-    private void OnTriggerExit(Collider other)
+    public void OnExit(Collider other)
     {
-        if (other.gameObject == activator) {
+        GameObject otherObject = other.gameObject;
+
+        if (objectsTouching.Contains(otherObject))
+        {
+            objectsTouching.Remove(otherObject);
+        }
+
+        if (lastHeld == otherObject.GetComponent<PlayerControllerB>())
+        {
+            lastHeld = null;
+        }
+
+        if (objectsTouching.Count < 1 && !animator.GetCurrentAnimatorStateInfo(0).IsName("fall") && !animator.GetCurrentAnimatorStateInfo(0).IsName("sit"))
+        {
             Fall();
         }
+
     }
 
     private void Flip()
     {
-        rakeFlipped = true;
+        if (Vector3.Distance(lastPositionAtFlip, base.transform.position) > 2f)
+        {
+            timesPlayingInOneSpot = 0;
+        }
+        timesPlayingInOneSpot = timesPlayingInOneSpot + 5;
+        lastPositionAtFlip = base.transform.position;
+
+        onCoolDown = true;
         animator.Play("flip");
-        rakeAudio.pitch = UnityEngine.Random.Range(0.75f, 1.07f);
-        rakeAudio.PlayOneShot(rakeFlip);
+
+        RoundManager.Instance.PlayAudibleNoise(base.transform.position, 10f, 1f, timesPlayingInOneSpot, isInShipRoom && StartOfRound.Instance.hangarDoorsClosed);
+        RoundManager.PlayRandomClip(rakeAudio, rakeFlip, randomize: true, 1f, -1);
+
+        Collider[] array = Physics.OverlapSphere(base.transform.position, damageRange, 2621448, QueryTriggerInteraction.Collide);
+        List<EnemyAI> hitEnemies = new List<EnemyAI>();
+        PlayerControllerB playerControllerB = null;
+        RaycastHit hitInfo;
+
+        for (int i =0; i < array.Length; i++)
+        {
+            float dist = Vector3.Distance(array[i].transform.position, base.transform.position);
+
+            //FOR ALL NEARBY PLAYERS
+            if (array[i].gameObject.layer == 3)
+            {
+                PlayerControllerB player = array[i].gameObject.GetComponent<PlayerControllerB>();
+
+                //DAMAGE ALL CLOSE PLAYERS
+                Vector3 bodyVelocity = Vector3.Normalize(player.transform.position - base.transform.position) * 80f / Vector3.Distance(player.transform.position, base.transform.position);
+                player.DamagePlayer(damageDealtPlayer, hasDamageSFX: true, callRPC: true, CauseOfDeath.Bludgeoning, 0, fallDamage:false, bodyVelocity);
+
+                //DROP HELD ITEM OF ALL CLOSE PLAYERS
+                if (player.isHoldingObject)
+                {
+                    DisarmPlayer(player);
+                }
+            }
+
+            //FOR ALL NEARBY ENEMIES
+            if (array[i].gameObject.layer == 19)
+            {
+                //DAMAGE ALL CLOSE ENEMIES
+                EnemyAICollisionDetect enemy = array[i].gameObject.GetComponentInChildren<EnemyAICollisionDetect>();
+                if (enemy != null && enemy.mainScript.IsOwner && !hitEnemies.Contains(enemy.mainScript))
+                {
+                    if (enemy.mainScript.enemyType.enemyName == "Crawler")
+                    {
+                        CrawlerAI crawler = enemy.mainScript as CrawlerAI;
+                        if (crawler.hasEnteredChaseMode)
+                        {
+                            hitEnemies.Add(enemy.mainScript);
+                            enemy.mainScript.HitEnemyOnLocalClient(damageDealtEnemy, playerWhoHit: lastHeld, playHitSFX: true, hitID: 1);
+                        }
+                    }
+                    else if (enemy.mainScript.enemyType.enemyName == "Bunker Spider")
+                    {
+                        SandSpiderAI spider = enemy.mainScript as SandSpiderAI;
+                        if (spider.movingTowardsTargetPlayer)
+                        {
+                            hitEnemies.Add(enemy.mainScript);
+                            enemy.mainScript.HitEnemyOnLocalClient(damageDealtEnemy, playerWhoHit: lastHeld, playHitSFX: true, hitID: 1);
+                        }
+                    }
+                    else if (enemy.mainScript.enemyType.enemyName == "Flowerman")
+                    {
+                    }
+                    else
+                    {
+                        hitEnemies.Add(enemy.mainScript);
+                        enemy.mainScript.HitEnemyOnLocalClient(damageDealtEnemy, playerWhoHit: lastHeld, playHitSFX: true, hitID: 1);
+                    }
+                }
+                else if (enemy != null)
+                {
+                }
+            }
+        }
+
+        playerControllerB = GameNetworkManager.Instance.localPlayerController;
+
+        //PHYSICS FORCE
+        if (physicsForce > 0f && !Physics.Linecast(base.transform.position, playerControllerB.transform.position + Vector3.up * upForce, out hitInfo, 256, QueryTriggerInteraction.Ignore))
+        {
+            float dist = Vector3.Distance(playerControllerB.transform.position, base.transform.position);
+            Vector3 vector = Vector3.Normalize(playerControllerB.transform.position + Vector3.up * dist - base.transform.position) / (dist * 0.35f) * physicsForce;
+            if (vector.magnitude > 2f)
+            {
+                if (vector.magnitude > 10f)
+                {
+                    playerControllerB.CancelSpecialTriggerAnimations();
+                }
+                if (!playerControllerB.inVehicleAnimation || (playerControllerB.externalForceAutoFade + vector).magnitude > 50f)
+                {
+                    playerControllerB.externalForceAutoFade += vector;
+                }
+            }
+        }
     }
 
     private void Fall()
     {
-        rakeFlipped = false;
+        StartCoroutine(CoolDown(coolDownTime));
+        if (Vector3.Distance(lastPositionAtFlip, base.transform.position) > 2f)
+        {
+            timesPlayingInOneSpot = 0;
+        }
+        timesPlayingInOneSpot = timesPlayingInOneSpot + 5;
+        lastPositionAtFlip = base.transform.position;
+        
         animator.Play("fall");
-        rakeAudio.pitch = UnityEngine.Random.Range(0.75f, 1.07f);
-        rakeAudio.PlayOneShot(rakeFall);
+
+        RoundManager.Instance.PlayAudibleNoise(base.transform.position, 10f, 1f, timesPlayingInOneSpot, isInShipRoom && StartOfRound.Instance.hangarDoorsClosed);
+        RoundManager.PlayRandomClip(rakeAudio, rakeFall, randomize: true, 1f, -1);
+    }
+
+    public void DisarmPlayer(PlayerControllerB player, bool itemsFall = true, bool disconnecting = false)
+    {
+        GrabbableObject gObject = player.currentlyHeldObjectServer;
+        int itemSlot = player.currentItemSlot;
+        if (!player.isHoldingObject)
+        {
+            return;
+        }
+        if (itemsFall)
+        {
+            gObject.parentObject = null;
+            gObject.heldByPlayerOnServer = false;
+            if (isInElevator)
+            {
+                gObject.transform.SetParent(player.playersManager.elevatorTransform, worldPositionStays: true);
+            }
+            else
+            {
+                gObject.transform.SetParent(player.playersManager.propsContainer, worldPositionStays: true);
+            }
+            player.SetItemInElevator(player.isInHangarShipRoom, player.isInElevator, gObject);
+            gObject.EnablePhysics(enable: true);
+            gObject.transform.localScale = gObject.originalScale;
+            gObject.isHeld = false;
+            gObject.isPocketed = false;
+            gObject.startFallingPosition = gObject.transform.parent.InverseTransformPoint(gObject.transform.position);
+            gObject.FallToGround(randomizePosition: true);
+            gObject.fallTime = UnityEngine.Random.Range(-0.3f, 0.05f);
+            if (player.IsOwner)
+            {
+                gObject.DiscardItemOnClient();
+            }
+            else if (!gObject.itemProperties.syncDiscardFunction)
+            {
+                gObject.playerHeldBy = null;
+            }
+        }
+        if (player.IsOwner && !disconnecting)
+        {
+            HUDManager.Instance.holdingTwoHandedItem.enabled = false;
+            HUDManager.Instance.itemSlotIcons[itemSlot].enabled = false;
+            HUDManager.Instance.ClearControlTips();
+            player.activatingItem = false;
+        }
+
+        player.ItemSlots[itemSlot] = null;
+
+        if (player.isHoldingObject)
+        {
+            player.isHoldingObject = false;
+            if (player.currentlyHeldObjectServer != null)
+            {
+                player.SetSpecialGrabAnimationBool(setTrue: false, player.currentlyHeldObjectServer);
+            }
+            player.playerBodyAnimator.SetBool("cancelHolding", value: true);
+            player.playerBodyAnimator.SetTrigger("Throw");
+        }
+        player.activatingItem = false;
+        player.twoHanded = false;
+        player.carryWeight = 1f;
+        player.currentlyHeldObjectServer = null;
+    }
+
+    public IEnumerator CoolDown(float duration)
+    {
+        yield return new WaitForSeconds(duration);
+        onCoolDown = false;
+    }
+
+    public override void GrabItem()
+    {
+        animator.Play("sit");
+        onCoolDown = false;
+        base.GrabItem();
+        lastHeld = playerHeldBy;
+        objectsTouching.Clear();
     }
 
     public override void ItemActivate(bool used, bool buttonDown = true)
@@ -184,11 +417,11 @@ public class Rake : PhysicsProp
 
     public override void DiscardItem()
     {
+        base.DiscardItem();
         if (playerHeldBy != null)
         {
             playerHeldBy.activatingItem = false;
         }
-        base.DiscardItem();
     }
 
     public void SwingRake(bool cancel = false)
@@ -205,7 +438,6 @@ public class Rake : PhysicsProp
     {
         if (previousPlayerHeldBy == null)
         {
-            Debug.LogError("Previousplayerheldby is null on this client when HitRake is called.");
             return;
         }
         previousPlayerHeldBy.activatingItem = false;

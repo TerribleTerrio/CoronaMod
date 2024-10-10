@@ -1,8 +1,8 @@
 {
     "name": "CoronaMod",
-    "version_number": "1.0.0",
-    "website_url": "https://github.com/MaxWasUnavailable/MoonOfTheDay",
-    "description": "Collection of additions by CoronaTerrio.",
+    "version_number": "1.2.0",
+    "website_url": "https://github.com/TerribleTerrio/CoronaMod",
+    "description": "Collection of additions by Terrio.",
     "dependencies": [
         "IAmBatby-LethalLevelLoader-1.2.2"
 		, "BepInEx-BepInExPack-5.4.2100"
